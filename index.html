@@ -209,7 +209,42 @@ $('weakness').addEventListener('change',draw);
 $('resistance').addEventListener('change',draw);
 $('exCheck').addEventListener('change',draw);
 $('exX').addEventListener('input',draw);
-$('download').onclick=()=>{draw();const a=document.createElement('a');a.download=(val('name')||'original-card')+'.png';a.href=canvas.toDataURL('image/png');a.click();};
+
+$('download').onclick=async()=>{
+  draw();
+
+  const filename=(val('name')||'original-card')+'.png';
+  const dataURL=canvas.toDataURL('image/png');
+
+  // PNGデータをFileに変換
+  const binary=atob(dataURL.split(',')[1]);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++){
+    bytes[i]=binary.charCodeAt(i);
+  }
+
+  const blob=new Blob([bytes],{type:'image/png'});
+  const file=new File([blob],filename,{type:'image/png'});
+
+  // スマホの共有メニューを使用
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({
+        files:[file],
+        title:filename
+      });
+      return;
+    }catch(error){
+      if(error.name==='AbortError')return;
+    }
+  }
+
+  // 共有機能が使えない場合は通常ダウンロード
+  const a=document.createElement('a');
+  a.download=filename;
+  a.href=dataURL;
+  a.click();
+};
 $('reset').onclick=()=>{if(!confirm('入力内容をリセットしますか？'))return;location.reload();};
 draw();
 </script>
