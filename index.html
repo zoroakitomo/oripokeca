@@ -280,7 +280,7 @@ function draw(){
      ctx.fillStyle=isAbility?'#d71920':textColor;ctx.font='bold 40px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';
      ctx.fillText(el.querySelector('.atkName').value,430,y,isAbility?300:470);
      if(!isAbility){ctx.textAlign='right';ctx.font='bold 43px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillText(el.querySelector('.atkDamage').value,790,y);ctx.textAlign='left';}
-     ctx.textAlign='left';fitText(el.querySelector('.atkText').value,80,y+34,700,25,2,'20px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',isAbility ? '#d71920' : textColor);
+     ctx.textAlign='left';fitText(el.querySelector('.atkText').value,80,y+34,700,25,2,'20px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',isAbility ? '#202020' : textColor);
      y+=160;ctx.textAlign='center'
    });
    // 弱点タイプ
