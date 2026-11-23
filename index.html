@@ -52,6 +52,7 @@ button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:point
 <div class="field">
   <label>弱点タイプ</label>
   <select id="weakness">
+    <option value="">なし</option>
     <option value="mizu">水</option>
     <option value="honoo">炎</option>
     <option value="kusa">草</option>
@@ -94,7 +95,7 @@ button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:point
 <section class="panel preview"><h2>カードプレビュー</h2><canvas id="card" width="868" height="1212"></canvas><p>カード内の文字はImpactを優先して表示します。入力内容は自動反映され、PNG保存できます。</p></section>
 </main>
 <script>
-const A='assets/';
+const A='';
 const energy={mizu:'mizukiso.png',honoo:'honookiso.png',kusa:'kusakiso.png',denki:'denkikiso.png',aku:'akukiso.png',chou:'choukiso.png',hagane:'haganekiso.png',ryuu:'ryuukiso.png',musyoku:'musyokukiso.png',tou:'toukiso.png'};
 const icons={mizu:'mizuene.png',honoo:'honooene.png',kusa:'kusaene.png',denki:'dennkiene.png',aku:'akuene.png',chou:'chouene.png',hagane:'haganeene.png',ryuu:'musyokuene.png',musyoku:'musyokuene.png',tou:'touene.png'};
 const labels={mizu:'水',honoo:'炎',kusa:'草',denki:'雷',aku:'悪',chou:'超',hagane:'鋼',musyoku:'無色',tou:'闘'};
@@ -179,13 +180,13 @@ function draw(){
        const none=load('enenasi.png');if(none.complete&&none.naturalWidth)ctx.drawImage(none,75,y-32,38,38);
      }
      ctx.fillStyle=isAbility?'#d71920':textColor;ctx.font='bold 40px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';
-     ctx.fillText(el.querySelector('.atkName').value,430,y,470);
+     ctx.fillText(el.querySelector('.atkName').value,430,y,isAbility?300:470);
      if(!isAbility){ctx.textAlign='right';ctx.font='bold 43px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillText(el.querySelector('.atkDamage').value,790,y);ctx.textAlign='left';}
-     fitText(el.querySelector('.atkText').value,80,y+34,700,25,2,'20px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',isAbility ? '#202020' : textColor);
+     ctx.textAlign='left';fitText(el.querySelector('.atkText').value,80,y+34,700,25,2,'20px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',isAbility ? '#202020' : textColor);
      y+=160;ctx.textAlign='center'
    });
    // 弱点タイプ
-    drawEnergy(val('weakness'),130,1043,31);
+    const weakness=val('weakness');if(weakness){drawEnergy(weakness,130,1043,31);ctx.font='bold 30px Arial, sans-serif';ctx.fillStyle=textColor;ctx.fillText('×2',190,1070);}
 
     // 抵抗タイプが選択されている場合だけ描画
     const resistance=val('resistance');
@@ -209,8 +210,41 @@ $('weakness').addEventListener('change',draw);
 $('resistance').addEventListener('change',draw);
 $('exCheck').addEventListener('change',draw);
 $('exX').addEventListener('input',draw);
-$('download').onclick=()=>{draw();const a=document.createElement('a');a.download=(val('name')||'original-card')+'.png';a.href=canvas.toDataURL('image/png');a.click();};
-$('reset').onclick=()=>{if(!confirm('入力内容をリセットしますか？'))return;location.reload();};
+$('download').onclick=async()=>{
+  draw();
+
+  const filename=(val('name')||'original-card')+'.png';
+  const dataURL=canvas.toDataURL('image/png');
+
+  // PNGデータをFileに変換
+  const binary=atob(dataURL.split(',')[1]);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++){
+    bytes[i]=binary.charCodeAt(i);
+  }
+
+  const blob=new Blob([bytes],{type:'image/png'});
+  const file=new File([blob],filename,{type:'image/png'});
+
+  // スマホの共有メニューを使用
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({
+        files:[file],
+        title:filename
+      });
+      return;
+    }catch(error){
+      if(error.name==='AbortError')return;
+    }
+  }
+
+  // 共有機能が使えない場合は通常ダウンロード
+  const a=document.createElement('a');
+  a.download=filename;
+  a.href=dataURL;
+  a.click();
+};$('reset').onclick=()=>{if(!confirm('入力内容をリセットしますか？'))return;location.reload();};
 draw();
 </script>
 </body></html>
