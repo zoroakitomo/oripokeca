@@ -17,11 +17,20 @@ textarea{min-height:60px;resize:vertical}.wide{grid-column:1/-1}.hint{font-size:
 .energy-list{display:flex;flex-wrap:wrap;gap:7px}.energy-option{display:flex;align-items:center;gap:4px;font-size:11px;background:#f5f7fa;border:1px solid #e2e7ee;border-radius:18px;padding:4px 7px}.energy-option input{width:auto;margin:0}
 button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer;background:#e8edf4;color:#243044}button.primary{background:#2563eb;color:white}button.danger{background:#fff0f0;color:#b42318;padding:5px 9px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .preview{position:sticky;top:14px;text-align:center}.preview canvas{width:min(100%,390px);height:auto;box-shadow:0 8px 28px #18223030;border-radius:7px;background:#ddd}.preview p{font-size:12px;color:#667085}
+#cropEditor {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+#cropEditor:active {
+  cursor: grabbing;
+}
 @media(max-width:800px){main{grid-template-columns:1fr}.preview{position:static;grid-row:1}.preview canvas{width:min(78vw,390px)}}
 </style>
 </head>
 <body>
-<header><h1>オリジナルカードメーカー</h1><p>画像・ワザ・特性を入力して、自分だけのカードを作成</p></header>
+<header><h1>オリジナルカードメーカー</h1><p>画像・ワザ・特性を入力して、自分だけのカードを作成</p><p>※当サイトで作成した画像の扱いはポケモンカードゲーム公式様に従ってください。</p></header>
 <main>
 <section class="panel">
 <h2>カードを編集</h2>
@@ -82,7 +91,7 @@ button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:point
   </select>
 </div>
 <div class="field"><label>にげるエネルギー数</label><select id="retreat"><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
-<div class="field"><label>作者名(任意)</label><input id="footer" placeholder="例：あきとも"></div>
+<div class="field"><label>なんでも</label><input id="footer" placeholder="例：あきとも"></div>
 </div>
 </div>
 <div id="trainerFields" hidden>
@@ -92,8 +101,14 @@ button{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:point
 <div class="actions"><button class="primary" id="download">PNG画像を保存</button><button id="reset">入力をリセット</button></div>
 <p class="hint">※このツールはファンメイドのカード作成用です。</p>
 </section>
-<section class="panel preview"><h2>カードプレビュー</h2><canvas id="card" width="868" height="1212"></canvas><p>カード内の文字はImpactを優先して表示します。入力内容は自動反映され、PNG保存できます。</p></section>
-</main>
+<section class="panel preview">
+  <h2>カードプレビュー</h2>
+  <canvas id="card" width="868" height="1212"></canvas>
+
+  <h2 style="margin-top:25px;">画像の切り抜き位置を調整</h2>
+  <canvas id="cropEditor" width="868" height="1212"></canvas>
+  <p>画像をドラッグして切り抜く位置を調整できます。</p>
+</section></main>
 <script>
 const A='';
 const energy={mizu:'mizukiso.png',honoo:'honookiso.png',kusa:'kusakiso.png',denki:'denkikiso.png',aku:'akukiso.png',chou:'choukiso.png',hagane:'haganekiso.png',ryuu:'ryuukiso.png',musyoku:'musyokukiso.png',tou:'toukiso.png'};
@@ -103,7 +118,15 @@ const files={};
 function load(file){if(!files[file]){const im=new Image();im.onload=()=>draw();im.src=A+file;files[file]=im;}return files[file];}
 const canvas=document.getElementById('card'),ctx=canvas.getContext('2d');
 let artImage=null,attackCount=0;
+let artOffsetX=0;
+let artOffsetY=0;
+let cropDragging=false;
+let lastPointerX=0;
+let lastPointerY=0;
+
 const $=id=>document.getElementById(id);
+const cropCanvas=$('cropEditor');
+const cropCtx=cropCanvas.getContext('2d');
 const fields=['kind','stage','name','hp','type','evolve','retreat','footer','trainerText','trainerFooter','weakness','resistance'];
 function addAttack(){
  const n=++attackCount,div=document.createElement('div');div.className='attack';div.dataset.attack=n;
@@ -144,11 +167,107 @@ function updateAttackControls(div){
  if(energyField)energyField.hidden=isAbility;
 }
 $('addAttack').onclick=()=>{if(attackCount>=2)return;addAttack();$('addAttack').hidden=attackCount>=2};addAttack();addAttack();$('addAttack').hidden=attackCount>=2;
-function val(id){return $(id).value}
-function fitText(text,x,y,maxW,lineH,maxLines=5,font='24px Impact, Haettenschweiler, \"Arial Narrow Bold\", sans-serif',color='#202020'){
- ctx.font=font;ctx.fillStyle=color;let line='',lines=[];
- for(const ch of String(text||'')){if(ctx.measureText(line+ch).width>maxW&&line){lines.push(line);line=ch;}else line+=ch;}
- if(line)lines.push(line);lines.slice(0,maxLines).forEach((s,i)=>ctx.fillText(s,x,y+i*lineH));
+function val(id){
+  return $(id).value;
+}
+
+function getArtBox(){
+  const kind=val('kind');
+
+  if(kind==='pokemon'){
+    return {x:70,y:115,w:728,h:455};
+  }
+
+  if(
+    kind==='item'||
+    kind==='tool'||
+    kind==='support'||
+    kind==='stadium'
+  ){
+    return {x:70,y:172,w:738,h:454};
+  }
+
+  return {x:70,y:115,w:728,h:455};
+}
+
+function drawArtEditor(){
+  const box=getArtBox();
+
+  cropCtx.clearRect(0,0,868,1212);
+  cropCtx.fillStyle='#ddd';
+  cropCtx.fillRect(0,0,868,1212);
+
+  if(!artImage)return;
+
+  const r=Math.max(box.w/artImage.width,box.h/artImage.height);
+  const w=artImage.width*r;
+  const h=artImage.height*r;
+
+  cropCtx.save();
+  cropCtx.beginPath();
+  cropCtx.rect(box.x,box.y,box.w,box.h);
+  cropCtx.clip();
+
+  cropCtx.drawImage(
+    artImage,
+    box.x+(box.w-w)/2+artOffsetX,
+    box.y+(box.h-h)/2+artOffsetY,
+    w,
+    h
+  );
+
+  cropCtx.restore();
+
+  cropCtx.strokeStyle='#2563eb';
+  cropCtx.lineWidth=3;
+  cropCtx.strokeRect(box.x,box.y,box.w,box.h);
+}
+function fitText(text,x,y,maxW,lineH,maxLines=5,font='24px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',color='#202020'){
+  ctx.font=font;
+  ctx.fillStyle=color;
+  let line='',lines=[];
+
+  for(const ch of String(text||'')){
+    if(ctx.measureText(line+ch).width>maxW&&line){
+      lines.push(line);
+      line=ch;
+    }else{
+      line+=ch;
+    }
+  }
+
+  if(line)lines.push(line);
+
+  lines=lines.slice(0,maxLines);
+
+  const totalHeight=lines.length*lineH;
+  const startY=y-totalHeight/2+lineH/2;
+
+  lines.forEach((s,i)=>{
+    ctx.fillText(s,x,startY+i*lineH);
+  });
+}
+function fitTextTop(text,x,y,maxW,lineH,maxLines=5,font='24px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',color='#202020'){
+  ctx.font=font;
+  ctx.fillStyle=color;
+  let line='',lines=[];
+
+  for(const ch of String(text||'')){
+    if(ctx.measureText(line+ch).width>maxW&&line){
+      lines.push(line);
+      line=ch;
+    }else{
+      line+=ch;
+    }
+  }
+
+  if(line)lines.push(line);
+
+  lines=lines.slice(0,maxLines);
+
+  lines.forEach((s,i)=>{
+    ctx.fillText(s,x,y+i*lineH);
+  });
 }
 function drawEnergy(type,x,y,size){if(!type)return;const im=load(icons[type]||icons.musyoku);if(im.complete&&im.naturalWidth)ctx.drawImage(im,x,y,size,size);}
 function draw(){
@@ -159,13 +278,43 @@ function draw(){
  let bg=pokemon?(energy[type]||energy.musyoku):({item:'motimono.png',tool:'motimono.png',support:'sapoto.png',stadium:'sutajiamu.png'}[kind]||'guzzu.png');
  if(kind==='item')bg='guzzu.png';if(kind==='tool')bg='motimono.png';
  ctx.clearRect(0,0,868,1212);
- if(artImage){ctx.save();ctx.beginPath();ctx.rect(70,115,728,455);ctx.clip();let r=Math.max(728/artImage.width,455/artImage.height),w=artImage.width*r,h=artImage.height*r;ctx.drawImage(artImage,70+(728-w)/2,115+(455-h)/2,w,h);ctx.restore();}
+  if(artImage){
+    const box=getArtBox();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(box.x,box.y,box.w,box.h);
+    ctx.clip();
+
+    const r=Math.max(box.w/artImage.width,box.h/artImage.height);
+    const w=artImage.width*r;
+    const h=artImage.height*r;
+
+    ctx.drawImage(
+      artImage,
+      box.x+(box.w-w)/2+artOffsetX,
+      box.y+(box.h-h)/2+artOffsetY,
+      w,
+      h
+    );
+
+    ctx.restore();
+  }
  const frame=load(bg);if(frame.complete&&frame.naturalWidth)ctx.drawImage(frame,0,0,868,1212);else{ctx.fillStyle='#ddd';ctx.fillRect(0,0,868,1212);}
  if(pokemon){
    // illustration window
    if(val('stage')==='1'||val('stage')==='2'){const ov=load(val('stage')==='1'?'1sinnka.png':'2sinnka.png');if(ov.complete&&ov.naturalWidth)ctx.drawImage(ov,0,0,868,1212);ctx.font='bold 25px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillStyle='#333';ctx.fillText(val('evolve')+"から進化",165,133);}
-   if($('exCheck').checked){const ex=load('EX.png');if(ex.complete&&ex.naturalWidth)ctx.drawImage(ex,Number(val('exX')),-5,868,1212);}
-   ctx.textAlign = 'left';ctx.fillStyle=textColor;ctx.font='bold 43px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillText(val('name'),155,85,590);
+    if($('exCheck').checked){
+      const ex=load('EX.png');
+      if(ex.complete&&ex.naturalWidth){
+        ctx.drawImage(ex,Number(val('exX')),-5,868,1212);
+      }
+
+      const exrule=load('exrule.png');
+      if(exrule.complete&&exrule.naturalWidth){
+        ctx.drawImage(exrule,0,0,868,1212);
+      }
+    }   ctx.textAlign = 'left';ctx.fillStyle=textColor;ctx.font='bold 43px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillText(val('name'),155,85,590);
    ctx.textAlign = 'center';ctx.font='bold 55px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillText((val('hp')||''),720,95);
    const attacks=[...document.querySelectorAll('.attack')];let y=700;
    attacks.forEach((el,i)=>{
@@ -182,7 +331,7 @@ function draw(){
      ctx.fillStyle=isAbility?'#d71920':textColor;ctx.font='bold 40px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';
      ctx.fillText(el.querySelector('.atkName').value,430,y,isAbility?300:470);
      if(!isAbility){ctx.textAlign='right';ctx.font='bold 43px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.fillText(el.querySelector('.atkDamage').value,790,y);ctx.textAlign='left';}
-     ctx.textAlign='left';fitText(el.querySelector('.atkText').value,80,y+34,700,25,2,'20px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',isAbility ? '#202020' : textColor);
+     ctx.textAlign='left';fitTextTop(el.querySelector('.atkText').value,80,y+34,700,25,Infinity,'20px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',isAbility ? textColor : textColor);
      y+=160;ctx.textAlign='center'
    });
    // 弱点タイプ
@@ -202,18 +351,90 @@ function draw(){
    ctx.fillStyle='#222';ctx.font='bold 43px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif';ctx.textAlign='left';ctx.fillText(val('name'),80,140,700);
    fitText(val('trainerText'),80,840,700,35,11,'25px Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif');
  }
+   drawArtEditor();
 }
-$('art').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{artImage=im;draw();};im.src=URL.createObjectURL(f);});
-fields.forEach(id=>{const el=$(id);if(el) el.addEventListener('input',draw);});
+$('art').addEventListener('change',e=>{
+  const f=e.target.files[0];
+  if(!f)return;
+
+  const im=new Image();
+
+  im.onload=()=>{
+    artImage=im;
+    artOffsetX=0;
+    artOffsetY=0;
+    draw();
+  };
+
+  im.src=URL.createObjectURL(f);
+});
+
+// ドラッグ開始
+cropCanvas.addEventListener('pointerdown',e=>{
+  const rect=cropCanvas.getBoundingClientRect();
+  const x=(e.clientX-rect.left)*868/rect.width;
+  const y=(e.clientY-rect.top)*1212/rect.height;
+
+  // イラスト枠の中だけドラッグ可能
+  const box=getArtBox();
+
+  if(
+    x<box.x||x>box.x+box.w||
+    y<box.y||y>box.y+box.h||
+    !artImage
+  )return;
+
+  cropDragging=true;
+  lastPointerX=e.clientX;
+  lastPointerY=e.clientY;
+  cropCanvas.setPointerCapture(e.pointerId);
+});
+
+// ドラッグ中
+cropCanvas.addEventListener('pointermove',e=>{
+  if(!cropDragging||!artImage)return;
+
+  const rect=cropCanvas.getBoundingClientRect();
+
+  const dx=(e.clientX-lastPointerX)*868/rect.width;
+  const dy=(e.clientY-lastPointerY)*1212/rect.height;
+
+  lastPointerX=e.clientX;
+  lastPointerY=e.clientY;
+
+  const box=getArtBox();
+
+  const r=Math.max(box.w/artImage.width,box.h/artImage.height);
+  const w=artImage.width*r;
+  const h=artImage.height*r;
+
+  // 画像がイラスト枠からはみ出さないように制限
+  artOffsetX=Math.max(
+    (box.w-w)/2,
+    Math.min((w-box.w)/2,artOffsetX+dx)
+  );
+
+  artOffsetY=Math.max(
+    (box.h-h)/2,
+    Math.min((h-box.h)/2,artOffsetY+dy)
+  );
+
+  draw();
+});
+
+// ドラッグ終了
+cropCanvas.addEventListener('pointerup',()=>{
+  cropDragging=false;
+});
+
+cropCanvas.addEventListener('pointercancel',()=>{
+  cropDragging=false;
+});fields.forEach(id=>{const el=$(id);if(el) el.addEventListener('input',draw);});
 $('retreat').addEventListener('change',draw);
 $('weakness').addEventListener('change',draw);
 $('resistance').addEventListener('change',draw);
 $('exCheck').addEventListener('change',draw);
 $('exX').addEventListener('input',draw);
-<<<<<<< HEAD
-=======
-
->>>>>>> 33089b6928b8ca7414a2507401d6ab93af05fd07
 $('download').onclick=async()=>{
   draw();
 
@@ -248,12 +469,7 @@ $('download').onclick=async()=>{
   a.download=filename;
   a.href=dataURL;
   a.click();
-<<<<<<< HEAD
 };$('reset').onclick=()=>{if(!confirm('入力内容をリセットしますか？'))return;location.reload();};
-=======
-};
-$('reset').onclick=()=>{if(!confirm('入力内容をリセットしますか？'))return;location.reload();};
->>>>>>> 33089b6928b8ca7414a2507401d6ab93af05fd07
 draw();
 </script>
 </body></html>
